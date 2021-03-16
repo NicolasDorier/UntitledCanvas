@@ -16,6 +16,9 @@ using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using Avalonia.Media.Imaging;
+using Avalonia.Utilities;
+using Avalonia.Visuals.Media.Imaging;
 
 namespace UntitledCanvas
 {
@@ -137,7 +140,6 @@ namespace UntitledCanvas
                 canvas.Save();
                 if (!isSetup)
                 {
-                    sketch.Window = Window;
                     sketch.Setup();
                     isSetup = true;
                 }
@@ -153,10 +155,53 @@ namespace UntitledCanvas
         }
         internal SketchDrawOperation sketchDraw;
         private FileSystemWatcher watcher;
-
+        private RenderTargetBitmap currentRTB;
         public override void Render(DrawingContext context)
         {
-            context.Custom(sketchDraw);
+            if (sketchDraw.Sketch.HasNewSize || currentRTB is null)
+            {
+                if (sketchDraw.Sketch.size.Width == 0 ||
+                    sketchDraw.Sketch.size.Height == 0)
+                {
+                    sketchDraw.Sketch.size = new SKRect(0, 0, 1, 1);
+                }
+                
+                var newRTB =
+                    new RenderTargetBitmap(new PixelSize((int)sketchDraw.Sketch.size.Width, (int)sketchDraw.Sketch.size.Height));
+
+                if (currentRTB is not null)
+                { 
+                    using (var currentRTBContext = currentRTB.CreateDrawingContext(null))
+                    using (var newRTBContext = newRTB.CreateDrawingContext(null))
+                    {
+                        var src = new Rect(new Point(0, 0), currentRTB.Size);
+                        var dst = new Rect(new Point(0, 0), newRTB.Size);
+                        
+                        newRTBContext.DrawBitmap(currentRTB.PlatformImpl, 1, src, dst, BitmapInterpolationMode.Default );
+                        
+                    }
+                    currentRTB?.Dispose();
+                }
+                
+                currentRTB = newRTB;
+                sketchDraw.Sketch.HasNewSize = false;
+                
+                Dispatcher.UIThread.Post(() =>
+                {
+                    Width = sketchDraw.Sketch.size.Width;
+                    Height = sketchDraw.Sketch.size.Height;
+                });
+            }
+
+            using (var currentRTBContext = currentRTB.CreateDrawingContext(null))
+            {
+                currentRTBContext.Custom(sketchDraw);
+            }
+            
+            var srcdst = new Rect(new Point(0, 0), currentRTB.Size);
+                        
+            context.PlatformImpl.DrawBitmap(currentRTB.PlatformImpl, 1, srcdst, srcdst, BitmapInterpolationMode.Default );
+
             base.Render(context);
             Dispatcher.UIThread.InvokeAsync(InvalidateVisual, DispatcherPriority.Background);
         }

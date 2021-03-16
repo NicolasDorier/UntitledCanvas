@@ -5,13 +5,14 @@ using SkiaSharp;
 using System;
 using System.Collections.Generic;
 using System.Text;
+using Avalonia.Media.Imaging;
 
 namespace UntitledCanvas
 {
 	public class SketchBase
 	{
-		internal UntitledCanvasWindow Window { get; set; }
 		public SKCanvas Canvas { get; set; }
+ 		
 		public virtual void Setup()
 		{
 
@@ -48,18 +49,26 @@ namespace UntitledCanvas
 			stroke = new SKPaint() { Color = new SKColor(gray, gray, gray) };
 		}
 
-		SKRect size;
+		private RenderTargetBitmap _targetBitmap;
+		internal SKRect size;
 		public void Size(int width, int height)
 		{
 			if (size.Width == width && size.Height == height)
 				return;
-			Dispatcher.UIThread.InvokeAsync(() =>
-			{
-				//Window.sketchDraw.Bounds = new Rect(0.0, 0.0, width, height);
-				Window.Width = width;
-				Window.Height = height;
-			}, DispatcherPriority.Normal);
+			
+			
+			// Dispatcher.UIThread.InvokeAsync(() =>
+			// {
+			// 	//Window.sketchDraw.Bounds = new Rect(0.0, 0.0, width, height);
+			// 	Window.Width = width;
+			// 	Window.Height = height;
+			// }, DispatcherPriority.Normal);
+			HasNewSize = true;
+			
 			size = new SKRect(0.0f, 0.0f, width, height);
 		}
+
+		internal volatile bool HasNewSize;
+		
 	}
 }
