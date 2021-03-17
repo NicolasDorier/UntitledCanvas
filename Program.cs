@@ -20,6 +20,13 @@ using Avalonia.Media.Imaging;
 using Avalonia.Utilities;
 using Avalonia.Visuals.Media.Imaging;
 using System.Net.Http.Headers;
+using System.Reactive.Linq;
+using System.Reactive.Subjects;
+using System.Reactive.Concurrency;
+using System.Reactive.Disposables;
+using System.Reactive;
+using System.Threading.Tasks;
+using UntitledCanvas.MySketch;
 
 namespace UntitledCanvas
 {
@@ -50,61 +57,107 @@ namespace UntitledCanvas
         public UntitledCanvasWindow()
         {
             sketchDraw = new SketchDrawOperation(this);
+            sketchDirectory = Path.Combine("../../../MySketch");
         }
+        int fps = 60;
+        CompositeDisposable disposables = new CompositeDisposable();
         protected override void OnInitialized()
         {
-            watcher = new FileSystemWatcher("../../..");
-            watcher.IncludeSubdirectories = false;
+            this.sketchDraw.SetSketch(new Sketch());
+            watcher = new FileWatcher(sketchDirectory);
             watcher.EnableRaisingEvents = true;
-            watcher.Changed += Watcher_Changed;
-            watcher.Renamed += Watcher_Changed;
-            sketchDraw.SetSketch(new Sketch());
+            disposables.Add(watcher);
+            disposables.Add(Observable
+                .FromEventPattern<string>(a => watcher.OnFileChange += a, a => watcher.OnFileChange -= a)
+                .Select(e => e.EventArgs)
+                .Throttle(TimeSpan.FromMilliseconds(100))
+                .Select(BuildSketch)
+                .Subscribe());
+            disposables.Add(Observable.Interval(TimeSpan.FromSeconds(1.0) / fps)
+                .Subscribe((_) =>
+                {
+                    Dispatcher.UIThread.InvokeAsync(InvalidateVisual, DispatcherPriority.Background);
+                }));
             base.OnInitialized();
         }
 
-        private void Watcher_Changed(object sender, FileSystemEventArgs e)
+
+        protected override void OnClosed(EventArgs e)
         {
-            if (e.Name == "Sketch.cs")
+            disposables.Dispose();
+            base.OnClosed(e);
+        }
+        private async Task<Unit> BuildSketch(string unused)
+        {
+            Console.Clear();
+            var p = DateTimeOffset.UtcNow;
+            var syntaxTrees =
+                Directory.EnumerateFileSystemEntries(sketchDirectory, "*.cs", SearchOption.AllDirectories)
+                .Select(async file =>
+                {
+                    return await ParseSyntaxTree(file, Path.GetRelativePath(sketchDirectory, file));
+                })
+                .ToArray();
+
+            List<SyntaxTree> trees = new List<SyntaxTree>();
+            foreach (var t in syntaxTrees)
             {
-                var code =  trycatch(() => File.ReadAllText(e.FullPath));
-                //code = code.Replace("class Sketch", "class Sketch" + new Random().Next(0, int.MaxValue));
-                var syntaxTree = CSharpSyntaxTree.ParseText(code);
-                CSharpCompilation compilation = CSharpCompilation.Create(
+                trees.Add(await t);
+            }
+            Console.WriteLine("Parsed in " + (DateTimeOffset.UtcNow - p).TotalMilliseconds + " ms");
+            p = DateTimeOffset.UtcNow;
+            CSharpCompilation compilation = CSharpCompilation.Create(
                 Path.GetRandomFileName(),
-                new[] { syntaxTree },
+                trees,
                 GetReferenceAssemblies(),
                 new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary)
                 );
-                using (var ms = new MemoryStream())
+            using (var ms = new MemoryStream())
+            {
+                var compilationResult = compilation.Emit(ms);
+                if (compilationResult.Success)
                 {
-                    var compilationResult = compilation.Emit(ms);
-                    if (compilationResult.Success)
+                    ms.Seek(0, SeekOrigin.Begin);
+                    var assembly = Assembly.Load(ms.ToArray());
+                    var sketchType = assembly.GetTypes().Where(t => t.BaseType == typeof(SketchBase)).First();
+                    var sketch = (SketchBase)Activator.CreateInstance(sketchType);
+                    Console.WriteLine("Compiled in " + (DateTimeOffset.UtcNow - p).TotalMilliseconds + " ms");
+                    _ = Dispatcher.UIThread.InvokeAsync(() =>
                     {
-                        ms.Seek(0, SeekOrigin.Begin);
-                        var assembly = Assembly.Load(ms.ToArray());
-                        var sketchType = assembly.GetTypes().Where(t => t.BaseType == typeof(SketchBase)).First();
-                        var sketch = (SketchBase)Activator.CreateInstance(sketchType);
-
-                        Dispatcher.UIThread.InvokeAsync(() =>
-                        {
-                            this.sketchDraw.SetSketch(sketch);
-                        }, DispatcherPriority.Background);
+                        this.sketchDraw.SetSketch(sketch);
+                    }, DispatcherPriority.Background);
+                }
+                else
+                {
+                    foreach (var err in compilationResult.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error))
+                    {
+                        var old = Console.ForegroundColor;
+                        Console.ForegroundColor = ConsoleColor.Red;
+                        Console.WriteLine(err.ToString());
+                        Console.ForegroundColor = old;
                     }
                 }
             }
+            return Unit.Default;
         }
 
-        private string trycatch(Func<string> p)
+        private async Task<SyntaxTree> ParseSyntaxTree(string path, string relativePath)
         {
+            string code = null;
             retry:
             try
             {
-                return p();
+                code = await File.ReadAllTextAsync(path);
+            }
+            catch (FileNotFoundException)
+            {
+                throw;
             }
             catch (IOException)
             {
                 goto retry;
             }
+            return CSharpSyntaxTree.ParseText(code).WithFilePath(relativePath);
         }
 
         private IEnumerable<MetadataReference> GetReferenceAssemblies()
@@ -168,7 +221,8 @@ namespace UntitledCanvas
             }
         }
         internal SketchDrawOperation sketchDraw;
-        private FileSystemWatcher watcher;
+        private string sketchDirectory;
+        private FileWatcher watcher;
         private RenderTargetBitmap currentRTB;
         public override void Render(DrawingContext context)
         {
@@ -215,9 +269,8 @@ namespace UntitledCanvas
             var srcdst = new Rect(new Point(0, 0), currentRTB.Size);
                         
             context.PlatformImpl.DrawBitmap(currentRTB.PlatformImpl, 1, srcdst, srcdst, BitmapInterpolationMode.Default );
-
             base.Render(context);
-            Dispatcher.UIThread.InvokeAsync(InvalidateVisual, DispatcherPriority.Background);
+            
         }
     }
 }

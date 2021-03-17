@@ -11,7 +11,12 @@ namespace UntitledCanvas
 {
 	public class SketchBase
 	{
-		public const float TAU = (float)(Math.PI * 2);
+		public const double TAU = Math.PI * 2.0;
+		Random rand = new Random();
+		public double Random(double min, double max)
+		{
+			return min + (rand.NextDouble() * (max - min));
+		}
 		public SKCanvas Canvas { get; set; }
  		
 		public virtual void Setup()
@@ -48,15 +53,15 @@ namespace UntitledCanvas
 			Canvas.DrawLine(0f, 0f, x, 0f, stroke);
 			Canvas.Translate(x, 0f);
 		}
-		public void Line(float x1, float y1, float x2, float y2)
+		public void Line(double x1, double y1, double x2, double y2)
 		{
-			Canvas.DrawLine(x1, y1, x2, y2, stroke);
+			Canvas.DrawLine((float)x1, (float)y1, (float)x2, (float)y2, stroke);
 
 		}
 
-		public void Translate(float x, float y)
+		public void Translate(double x, double y)
 		{
-			Canvas.Translate(x, y);
+			Canvas.Translate((float)x, (float)y);
 		}
 
 		SKPaint stroke = new SKPaint();
