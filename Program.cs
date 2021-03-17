@@ -19,6 +19,7 @@ using System.Reflection;
 using Avalonia.Media.Imaging;
 using Avalonia.Utilities;
 using Avalonia.Visuals.Media.Imaging;
+using System.Net.Http.Headers;
 
 namespace UntitledCanvas
 {
@@ -65,8 +66,8 @@ namespace UntitledCanvas
         {
             if (e.Name == "Sketch.cs")
             {
-                var code = File.ReadAllText(e.FullPath);
-                code = code.Replace("class Sketch", "class Sketch" + new Random().Next(0, int.MaxValue));
+                var code =  trycatch(() => File.ReadAllText(e.FullPath));
+                //code = code.Replace("class Sketch", "class Sketch" + new Random().Next(0, int.MaxValue));
                 var syntaxTree = CSharpSyntaxTree.ParseText(code);
                 CSharpCompilation compilation = CSharpCompilation.Create(
                 Path.GetRandomFileName(),
@@ -90,6 +91,19 @@ namespace UntitledCanvas
                         }, DispatcherPriority.Background);
                     }
                 }
+            }
+        }
+
+        private string trycatch(Func<string> p)
+        {
+            retry:
+            try
+            {
+                return p();
+            }
+            catch (IOException)
+            {
+                goto retry;
             }
         }
 
@@ -169,7 +183,7 @@ namespace UntitledCanvas
                 var newRTB =
                     new RenderTargetBitmap(new PixelSize((int)sketchDraw.Sketch.size.Width, (int)sketchDraw.Sketch.size.Height));
 
-                if (currentRTB is not null)
+                if (!(currentRTB is null))
                 { 
                     using (var currentRTBContext = currentRTB.CreateDrawingContext(null))
                     using (var newRTBContext = newRTB.CreateDrawingContext(null))

@@ -11,6 +11,7 @@ namespace UntitledCanvas
 {
 	public class SketchBase
 	{
+		public const float TAU = (float)(Math.PI * 2);
 		public SKCanvas Canvas { get; set; }
  		
 		public virtual void Setup()
@@ -25,28 +26,47 @@ namespace UntitledCanvas
 		
 		public void Background(byte gray)
 		{
-			var color = new SKColor(gray, gray, gray);
-			if (background != null)
-			{
-				if (background.Color == color)
-				{
-					Canvas.DrawRect(size, background);
-					return;
-				}
-				background.Dispose();
-			}
-			background = new SKPaint() { Color = color };
+			Background(gray, gray, gray);
+		}
+
+		SKPaint background = null;
+		public void Background(byte r, byte g, byte b)
+		{
+			if (background is null)
+				background = new SKPaint();
+			background.Color = new SKColor(r, g, b);
+			background = new SKPaint() { Color = new SKColor(r, g, b) };
 			Canvas.DrawRect(size, background);
 		}
-		SKPaint background;
-		SKPaint stroke;
+		public void Rotate(float radians)
+		{
+			Canvas.RotateRadians(radians);
+		}
+
+		public void Line(float x)
+		{
+			Canvas.DrawLine(0f, 0f, x, 0f, stroke);
+			Canvas.Translate(x, 0f);
+		}
+		public void Line(float x1, float y1, float x2, float y2)
+		{
+			Canvas.DrawLine(x1, y1, x2, y2, stroke);
+
+		}
+
+		public void Translate(float x, float y)
+		{
+			Canvas.Translate(x, y);
+		}
+
+		SKPaint stroke = new SKPaint();
 		public void Stroke(byte gray)
 		{
-			if (stroke != null)
-			{
-				stroke.Dispose();
-			}
-			stroke = new SKPaint() { Color = new SKColor(gray, gray, gray) };
+			Stroke(gray, gray, gray);
+		}
+		public void Stroke(byte r, byte g, byte b)
+		{
+			stroke.Color = new SKColor(r, g, b);
 		}
 
 		private RenderTargetBitmap _targetBitmap;
